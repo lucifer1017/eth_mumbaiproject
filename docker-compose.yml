@@ -1,0 +1,112 @@
+include:
+  - docker-compose.agents.yml
+
+x-backend-env: &backend-env
+  # Database
+  DATABASE_URL: postgres://sip:sip@postgres:5432/sip_daemon
+  API_PORT: "3001"
+  CORS_ORIGIN: http://localhost:3000
+  RPC_URL: https://sepolia-rollup.arbitrum.io/rpc
+  CHAIN_ID: "421614"
+  PRIVATE_KEY: "${PRIVATE_KEY}"
+  SUBSCRIPTIONS_ADDR: "0xdeA11fC11A86a2c3bD70F5D37087C869F0bf88Ed"
+  SERVICE_FACTORY_ADDR: "0xA5f93514BDB527580f81AFBe583267EFefe3226c"
+  VALIDATION_REGISTRY_ADDR: "0xb3E35540bb8862ac3b4A80Ac80ecbe7eC90b185b"
+  AGGREGATOR_ADDR: "0xe4CB3caAA49c61F2593370138DEC7fdfd0643Cf7"
+  USDC_ADDR: "0x6Fd5c8aF495B2811288B9491932dc2bC079a9691"
+  OUTPUT_TOKEN_ADDR: "0xe8D355544f832B731D7Bd040B8D6d4eE959b6401"
+  ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+  # Block just before the current contracts were deployed (run-1781424293207.json,
+  # first receipt at block 277075766). Starting at 0 would mean ~277M blocks to
+  # scan in 10k-block chunks before any agent events are found.
+  INDEXER_START_BLOCK: "277075700"
+  INDEXER_POLL_SECS: "20"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: sip
+      POSTGRES_PASSWORD: sip
+      POSTGRES_DB: sip_daemon
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sip -d sip_daemon"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    environment: *backend-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      agent_risk_analyzer:
+        condition: service_started
+
+  indexer:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["npm", "run", "start"]
+    environment: *backend-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_started
+
+  # Executes due subscriptions on-chain (Subscriptions.execute) for the
+  # DCA agent (onchain_agent_id=16), polling the shared DB on a fixed
+  # interval. Same image as backend/indexer, different command.
+  executor:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["npm", "run", "executor:start"]
+    environment:
+      <<: *backend-env
+      AGENT_ID: "16"
+      LOG_LEVEL: "debug"
+      MIN_TRUST_SCORE: "0"
+      MAX_GAS_GWEI: "0.1"
+      SCHEDULER_INTERVAL_SECS: "30"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_started
+      agent_dca:
+        condition: service_started
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      # NEXT_PUBLIC_* values are baked into the bundle at build time —
+      # they must be build args, not runtime environment.
+      args:
+        NEXT_PUBLIC_API_BASE_URL: http://localhost:3001/api/v1
+        NEXT_PUBLIC_SERVICE_FACTORY_ADDRESS: "0xA5f93514BDB527580f81AFBe583267EFefe3226c"
+        NEXT_PUBLIC_SUBSCRIPTIONS_ADDRESS: "0xdeA11fC11A86a2c3bD70F5D37087C869F0bf88Ed"
+        NEXT_PUBLIC_USDC_ADDRESS: "0x6Fd5c8aF495B2811288B9491932dc2bC079a9691"
+        NEXT_PUBLIC_WETH_ADDRESS: "0xe8D355544f832B731D7Bd040B8D6d4eE959b6401"
+        NEXT_PUBLIC_WBTC_ADDRESS: "0x13b0D6bBa80860b5e9b62561a3Ff1f5a2Fa4436c"
+        NEXT_PUBLIC_AGGREGATOR_ADDRESS: "0xe4CB3caAA49c61F2593370138DEC7fdfd0643Cf7"
+        NEXT_PUBLIC_WC_PROJECT_ID: "${NEXT_PUBLIC_WC_PROJECT_ID}"
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:

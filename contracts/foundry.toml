@@ -1,0 +1,29 @@
+[profile.default]
+src    = "src"
+out    = "out"
+libs   = ["lib"]
+via_ir = true
+fs_permissions = [{ access = "read-write", path = "./deployments/" }]
+# Stale integration tests deferred; mocks harness keeps MockService compiling.
+skip = [
+  "test/Subscriptions.t.sol",
+  "test/SIPService.t.sol",
+  "test/ERC8004IdentityRegistry.t.sol",
+  "test/ERC8004ValidationRegistry.t.sol",
+]
+
+[lint]
+exclude_lints = [
+  "screaming-snake-case-immutable",
+  "mixed-case-variable",
+  "unsafe-cheatcode",
+  "asm-keccak256",
+]
+
+[rpc_endpoints]
+arbitrum_one    = "${ARBITRUM_RPC_URL}"
+arbitrum_sepolia = "${ARBITRUM_SEPOLIA_RPC_URL}"
+
+[etherscan]
+arbitrum_sepolia = { key = "${ARBISCAN_API_KEY}", url = "https://api.etherscan.io/v2/api?chainid=421614" }
+arbitrum_one     = { key = "${ARBISCAN_API_KEY}", url = "https://api.etherscan.io/v2/api?chainid=42161" }

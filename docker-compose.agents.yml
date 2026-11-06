@@ -1,0 +1,35 @@
+x-agent-env: &agent-env
+  RPC_URL: https://sepolia-rollup.arbitrum.io/rpc
+  CHAIN_ID: "421614"
+  PRIVATE_KEY: "${PRIVATE_KEY}"
+  USDC_ADDR: "0x6Fd5c8aF495B2811288B9491932dc2bC079a9691"
+  COINCAP_KEY: "${COINCAP_KEY}"
+  ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+
+services:
+  # x402 worker for the DCA agent (onchain_agent_id=16). Serves /price, /route,
+  # and the paid /v1/decide endpoint that the executor calls and settles in
+  # real on-chain USDC.
+  agent_dca:
+    build:
+      context: ./agents/agent_dca
+      dockerfile: Dockerfile
+    ports:
+      - "8402:8402"
+    environment:
+      <<: *agent-env
+      MOCK_X402_PORT: "8402"
+      DECIDE_PRICE_USDC: "10000"
+
+  # x402 worker for the Wallet Risk Analyzer one-time agent. Serves the paid
+  # /v1/risk-report endpoint, settled in real on-chain USDC.
+  agent_risk_analyzer:
+    build:
+      context: ./agents/agent_risk_analyzer
+      dockerfile: Dockerfile
+    ports:
+      - "8403:8403"
+    environment:
+      <<: *agent-env
+      MOCK_X402_PORT: "8403"
+      RISK_REPORT_PRICE_USDC: "40000"
